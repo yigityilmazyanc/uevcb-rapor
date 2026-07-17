@@ -267,6 +267,8 @@ def arayuz():
     orglar = []        # [(id, ad)] — tam liste
     suzgun = []        # filtre uygulanmış görünüm
     uevcbler = []      # seçili org'un UEVÇB'leri
+    son_org = [None]   # en son seçilen organizasyon (liste yenilense de hatırlanır)
+    uevcb_orgu = [None]  # uevcbler listesi hangi org için çekildi
     mesgul = [False]
 
     # --- üst satır: tarih aralığı + klasör
@@ -307,7 +309,7 @@ def arayuz():
     org_lb.pack(side="left", fill="both", expand=True)
     org_sc.pack(side="left", fill="y")
 
-    uevcb_lb = tk.Listbox(sag, exportselection=False)
+    uevcb_lb = tk.Listbox(sag, exportselection=False, selectmode="extended")
     uevcb_sc = ttk.Scrollbar(sag, orient="vertical", command=uevcb_lb.yview)
     uevcb_lb.configure(yscrollcommand=uevcb_sc.set)
     uevcb_lb.pack(side="left", fill="both", expand=True)
@@ -371,9 +373,9 @@ def arayuz():
 
     def secili_org():
         s = org_lb.curselection()
-        if not s or not suzgun:
-            return None
-        return suzgun[s[0]]
+        if s and suzgun:
+            son_org[0] = suzgun[s[0]]
+        return son_org[0]  # liste yenilenip seçim kaybolsa da son seçim geçerli
 
     def uevcb_goster():
         sec = secili_org()
@@ -387,19 +389,24 @@ def arayuz():
             log(f"{ad} → UEVÇB listesi taranıyor ({bas} → {bit}, ay ay)...")
             uevcbler.clear()
             uevcbler.extend(uevcb_listesi(oid, bas, bit, log))
-            log(f"{len(uevcbler)} UEVÇB bulundu.")
+            uevcb_orgu[0] = oid
+            log(f"{len(uevcbler)} UEVÇB bulundu — istersen sağdan seç (seçmezsen hepsi yazılır).")
             kuyruk.put("__UEVCB_GOSTER__")
         calistir_arka(is_)
 
     def excel_olustur():
         sec = secili_org()
         if not sec:
-            messagebox.showwarning("Uyarı", "Soldan bir organizasyon seçin.")
+            messagebox.showwarning("Uyarı", "Soldan bir organizasyon seçin "
+                                   "(ya da çift tıklayıp UEVÇB'lerini getirin).")
             return
         oid, ad = sec
         bas, bit = tarihler()
         klasor = klasor_g.get().strip()
-        u = list(uevcbler) if uevcbler else None
+        u = None
+        if uevcbler and uevcb_orgu[0] == oid:  # başka org'un UEVÇB listesi kullanılmasın
+            secili = [uevcbler[i] for i in uevcb_lb.curselection()]
+            u = secili or list(uevcbler)  # sağda seçim varsa yalnız onlar, yoksa hepsi
 
         def is_():
             rapor_uret(oid, ad, bas, bit, klasor, log=log, uevcbler=u)
@@ -430,6 +437,7 @@ def arayuz():
     uevcb_b.configure(command=uevcb_goster)
     excel_b.configure(command=excel_olustur)
     filtre_g.bind("<KeyRelease>", lambda e: org_goster())
+    org_lb.bind("<<ListboxSelect>>", lambda e: secili_org())  # tık anında seçimi hatırla
     org_lb.bind("<Double-Button-1>", lambda e: uevcb_goster())
 
     pen.after(150, kuyruk_isle2)
