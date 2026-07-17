@@ -1,0 +1,7 @@
+.eptr2-tgt
+ayarlar.json
+.epias_pw
+*.xlsx
+__pycache__/
+*.pyc
+.env
