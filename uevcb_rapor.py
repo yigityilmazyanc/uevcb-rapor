@@ -230,7 +230,8 @@ def rapor_uret(org_id, org_ad, bas, bit, klasor, log=print, uevcbler=None):
         pl = df_yap(e.call("uevm-pp-list"))
 
         def norm(s):
-            return re.sub(r"\s+", " ", str(s)).strip().upper()
+            # noktalama/boşluk farklarını yok say ("...SANT." ↔ "...SANT" gibi)
+            return re.sub(r"[^0-9A-ZÇĞİÖŞÜ]+", " ", str(s).upper()).strip()
         pp_ad = {norm(str(nm).rsplit("-", 1)[0]): pid for pid, nm in zip(pl["id"], pl["name"])}
         for _, ad in uevcbler:
             pid = pp_ad.get(norm(ad))
