@@ -437,6 +437,15 @@ def arayuz():
         u = None
         if uevcbler and uevcb_orgu[0] == oid:  # başka org'un UEVÇB listesi kullanılmasın
             secili = [uevcbler[i] for i in uevcb_lb.curselection()]
+            if secili and len(secili) < len(uevcbler):
+                # farkında olmadan eksik santralli dosya üretilmesin — açıkça sor
+                if not messagebox.askyesno(
+                        "Santral seçimi",
+                        f"Sağda {len(secili)}/{len(uevcbler)} santral seçili:\n"
+                        + "\n".join("• " + ad for _, ad in secili)
+                        + "\n\nYalnız seçilenler dosyaya girecek. Devam edilsin mi?\n"
+                        "(Hayır = TÜM santraller dahil edilir)"):
+                    secili = []
             u = secili or list(uevcbler)  # sağda seçim varsa yalnız onlar, yoksa hepsi
 
         def is_():
