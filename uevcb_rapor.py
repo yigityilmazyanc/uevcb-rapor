@@ -230,13 +230,6 @@ def rapor_uret(org_id, org_ad, bas, bit, klasor, log=print, uevcbler=None):
     for ad, seri in (list(gop.items()) + [("İA Alış (MWh)", ia_alis), ("İA Satış (MWh)", ia_satis)]
                      + list(gip.items())):
         tablo[ad] = seri.reindex(idx)
-    # Ticari piyasalarda kaydı olmayan GEÇMİŞ saat "0 eşleşme" demektir, veri eksiği değil
-    # (özellikle GİP: eşleşmesiz kontrat API'de hiç dönmez). Gelecek saatler boş kalır.
-    simdi = pd.Timestamp.now().floor("h")
-    gecmis = tablo.index <= simdi
-    for ad in ["GÖP Eşleşme Alış (MWh)", "GÖP Eşleşme Satış (MWh)", "İA Alış (MWh)",
-               "İA Satış (MWh)", "GİP Alış (MWh)", "GİP Satış (MWh)"]:
-        tablo.loc[gecmis, ad] = tablo.loc[gecmis, ad].fillna(0.0)
 
     # her santralin İlk/Son KGÜP'ü ayrı sütun (UEVÇB bazlı yayınlanır)
     n = len(uevcbler)
@@ -274,6 +267,9 @@ def rapor_uret(org_id, org_ad, bas, bit, klasor, log=print, uevcbler=None):
     son_dolu = tablo.iloc[:, 2:].notna().any(axis=1)  # yayınlanmamış kuyruk saatleri at
     if son_dolu.any():
         tablo = tablo.loc[:son_dolu[son_dolu].index[-1]]
+    # kullanıcı tercihi: kalan tüm boş hücrelere 0 yazılır (UEVM dahil —
+    # henüz yayınlanmamış saatler de 0 görünür, sonraki çalıştırmada gerçek değer gelir)
+    tablo.iloc[:, 2:] = tablo.iloc[:, 2:].fillna(0.0)
 
     klasor = Path(klasor)
     klasor.mkdir(parents=True, exist_ok=True)
