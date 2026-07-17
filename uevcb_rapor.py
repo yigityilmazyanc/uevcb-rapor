@@ -230,6 +230,13 @@ def rapor_uret(org_id, org_ad, bas, bit, klasor, log=print, uevcbler=None):
     for ad, seri in (list(gop.items()) + [("İA Alış (MWh)", ia_alis), ("İA Satış (MWh)", ia_satis)]
                      + list(gip.items())):
         tablo[ad] = seri.reindex(idx)
+    # Ticari piyasalarda kaydı olmayan GEÇMİŞ saat "0 eşleşme" demektir, veri eksiği değil
+    # (özellikle GİP: eşleşmesiz kontrat API'de hiç dönmez). Gelecek saatler boş kalır.
+    simdi = pd.Timestamp.now().floor("h")
+    gecmis = tablo.index <= simdi
+    for ad in ["GÖP Eşleşme Alış (MWh)", "GÖP Eşleşme Satış (MWh)", "İA Alış (MWh)",
+               "İA Satış (MWh)", "GİP Alış (MWh)", "GİP Satış (MWh)"]:
+        tablo.loc[gecmis, ad] = tablo.loc[gecmis, ad].fillna(0.0)
 
     # her santralin İlk/Son KGÜP'ü ayrı sütun (UEVÇB bazlı yayınlanır)
     n = len(uevcbler)
