@@ -11,7 +11,8 @@ organizasyon adıyla TEK Excel dosyası üretir:
 | G, H | GİP Alış / Satış (MWh) | `idm-qty` (org bazlı, yalnız saatlik kontratlar) |
 | I… | Her santralin İlk KGÜP / Son KGÜP çifti (MWh) | `kgup-v1` / `kgup` (**UEVÇB bazlı**) |
 | … | UEVM Toplam (MWh) | `uevm` (santral bazlı; ~1,5 ay geriden yayınlanır) |
-| son | NET = Σ(Son KGÜP − İlk KGÜP) | Excel formülü |
+| … | EDM = UEVM − Satışlar + Alışlar | Excel formülü |
+| son | Net Satış Miktarı = (GÖP+İA+GİP Satış) − (GÖP+İA+GİP Alış) | Excel formülü |
 
 Not: EPİAŞ, GÖP eşleşme / İA / GİP verilerini yalnız **organizasyon** bazında
 yayınlar; UEVÇB kırılımı yoktur (dosyanın 1. satırında da yazar). KGÜP ve UEVM

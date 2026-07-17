@@ -197,8 +197,9 @@ def guvenli_ad(ad):
 
 
 def rapor_uret(org_id, org_ad, bas, bit, klasor, log=print, uevcbler=None):
-    """Organizasyon için TEK Excel üretir: GÖP/İA (org toplamı) + her santralin
-    İlk/Son KGÜP'ü + UEVM toplamı + NET (Σ Son−İlk KGÜP, Excel formülü)."""
+    """Organizasyon için TEK Excel üretir: GÖP/İA/GİP (org toplamı) + her santralin
+    İlk/Son KGÜP'ü + UEVM toplamı + EDM (UEVM − Satışlar + Alışlar) +
+    Net Satış Miktarı (Satışlar − Alışlar) — son ikisi Excel formülü."""
     from openpyxl.utils import get_column_letter
 
     log(f"Organizasyon: {org_ad} (id {org_id})")
@@ -280,16 +281,21 @@ def rapor_uret(org_id, org_ad, bas, bit, klasor, log=print, uevcbler=None):
             ws = w.sheets["Veri"]
             ws["A1"] = (f"{org_ad} — GÖP/İA/GİP org toplamı (EPİAŞ UEVÇB kırılımı yayınlamaz; "
                         "GİP yalnız saatlik kontratlar); KGÜP sütunları santral bazlı; "
-                        "UEVM ~1,5 ay geriden yayınlanır; NET = Σ(Son KGÜP − İlk KGÜP).")
-            # NET sütunu: santrallerin (Son − İlk KGÜP) toplamı, Excel formülü
-            if n:
-                net_kol = 10 + 2 * n  # A..H=8 ticari, KGÜP çiftleri I'dan, +1 UEVM, +1 NET
-                ws.cell(row=2, column=net_kol, value="NET (MWh)")
-                for r in range(3, len(tablo) + 3):
-                    parcalar = [f"({get_column_letter(10 + 2 * i)}{r}-{get_column_letter(9 + 2 * i)}{r})"
-                                for i in range(n)]
-                    ws.cell(row=r, column=net_kol, value="=" + "+".join(parcalar))
-                ws.column_dimensions[get_column_letter(net_kol)].width = 12
+                        "UEVM ~1,5 ay geriden yayınlanır; EDM = UEVM − Satışlar + Alışlar; "
+                        "Net Satış = (GÖP+İA+GİP Satış) − (GÖP+İA+GİP Alış).")
+            # EDM ve Net Satış sütunları (Excel formülü); Satış=D+F+H, Alış=C+E+G
+            uevm_kol = 9 + 2 * n  # A..H=8 ticari, KGÜP çiftleri I'dan, sonra UEVM
+            edm_kol, nsat_kol = uevm_kol + 1, uevm_kol + 2
+            uevm_h = get_column_letter(uevm_kol)
+            ws.cell(row=2, column=edm_kol, value="EDM (MWh)")
+            ws.cell(row=2, column=nsat_kol, value="Net Satış Miktarı (MWh)")
+            for r in range(3, len(tablo) + 3):
+                ws.cell(row=r, column=edm_kol,
+                        value=f"={uevm_h}{r}-(D{r}+F{r}+H{r})+(C{r}+E{r}+G{r})")
+                ws.cell(row=r, column=nsat_kol,
+                        value=f"=(D{r}+F{r}+H{r})-(C{r}+E{r}+G{r})")
+            ws.column_dimensions[get_column_letter(edm_kol)].width = 12
+            ws.column_dimensions[get_column_letter(nsat_kol)].width = 20
             for k, gen in zip("ABCDEFGH", (12, 7, 22, 22, 16, 16, 14, 14)):
                 ws.column_dimensions[k].width = gen
             for i in range(2 * n + 1):  # KGÜP sütunları + UEVM
