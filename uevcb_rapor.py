@@ -126,7 +126,18 @@ def aylik_dilimler(bas, bit):
     return out
 
 
-def saatlik_cek(key, org_id, bas, bit, kolon, log=print, **ek):
+def gip_donustur(df):
+    """idm-qty kontrat satırlarını saatlik seriye çevirir: PH26030101 → 2026-03-01 01:00.
+    Yalnız saatlik kontratlar sayılır (blok kontratlar saate bölünemez)."""
+    df = df[df["kontratTuru"] == "Saatlik"]
+    if not len(df):
+        return pd.DataFrame(columns=["date", "clearingQuantityAsk", "clearingQuantityBid"])
+    g = df.groupby(df["kontratAdi"].str[2:10])[["clearingQuantityAsk", "clearingQuantityBid"]].sum().reset_index()
+    g["date"] = pd.to_datetime("20" + g["kontratAdi"], format="%Y%m%d%H").dt.strftime("%Y-%m-%dT%H:%M:%S")
+    return g
+
+
+def saatlik_cek(key, org_id, bas, bit, kolon, log=print, onisle=None, **ek):
     """Bir endpoint'i aylık parçalarla çeker; tek saatlik seri/sözlük döndürür.
     EPİAŞ hız limitine (429) takılınca bekleyip aynı parçayı yeniden dener."""
     e = baglan()
@@ -168,6 +179,8 @@ def saatlik_cek(key, org_id, bas, bit, kolon, log=print, **ek):
             if df is None:
                 log(f"  uyarı: {key} {b}—{s} alınamadı, atlandı ({str(ex)[:80]})")
                 continue
+        if onisle is not None and len(df):
+            df = onisle(df)
         if len(df):
             parcalar.append(df)
     if not parcalar:
@@ -205,12 +218,17 @@ def rapor_uret(org_id, org_ad, bas, bit, klasor, log=print, uevcbler=None):
     ia_alis = saatlik_cek("bi-long", org_id, bas, bit, "quantity", log)
     log("İA satış çekiliyor...")
     ia_satis = saatlik_cek("bi-short", org_id, bas, bit, "quantity", log)
+    log("GİP eşleşme çekiliyor...")
+    gip = saatlik_cek("idm-qty", org_id, bas, bit,
+                      {"GİP Alış (MWh)": "clearingQuantityBid",
+                       "GİP Satış (MWh)": "clearingQuantityAsk"}, log, onisle=gip_donustur)
 
     idx = pd.date_range(f"{bas} 00:00", f"{bit} 23:00", freq="h")
     tablo = pd.DataFrame(index=idx)
     tablo["Tarih"] = tablo.index.date
     tablo["Saat"] = tablo.index.strftime("%H:00")
-    for ad, seri in list(gop.items()) + [("İA Alış (MWh)", ia_alis), ("İA Satış (MWh)", ia_satis)]:
+    for ad, seri in (list(gop.items()) + [("İA Alış (MWh)", ia_alis), ("İA Satış (MWh)", ia_satis)]
+                     + list(gip.items())):
         tablo[ad] = seri.reindex(idx)
 
     # her santralin İlk/Son KGÜP'ü ayrı sütun (UEVÇB bazlı yayınlanır)
@@ -257,22 +275,22 @@ def rapor_uret(org_id, org_ad, bas, bit, klasor, log=print, uevcbler=None):
         with pd.ExcelWriter(yol, engine="openpyxl") as w:
             tablo.to_excel(w, index=False, sheet_name="Veri", startrow=1)
             ws = w.sheets["Veri"]
-            ws["A1"] = (f"{org_ad} — GÖP/İA org toplamı (EPİAŞ UEVÇB kırılımı yayınlamaz); "
-                        "KGÜP sütunları santral bazlı; UEVM ~1,5 ay geriden yayınlanır; "
-                        "NET = Σ(Son KGÜP − İlk KGÜP).")
+            ws["A1"] = (f"{org_ad} — GÖP/İA/GİP org toplamı (EPİAŞ UEVÇB kırılımı yayınlamaz; "
+                        "GİP yalnız saatlik kontratlar); KGÜP sütunları santral bazlı; "
+                        "UEVM ~1,5 ay geriden yayınlanır; NET = Σ(Son KGÜP − İlk KGÜP).")
             # NET sütunu: santrallerin (Son − İlk KGÜP) toplamı, Excel formülü
             if n:
-                net_kol = 8 + 2 * n  # A..F=6, KGÜP çiftleri G'den, +1 UEVM, +1 NET
+                net_kol = 10 + 2 * n  # A..H=8 ticari, KGÜP çiftleri I'dan, +1 UEVM, +1 NET
                 ws.cell(row=2, column=net_kol, value="NET (MWh)")
                 for r in range(3, len(tablo) + 3):
-                    parcalar = [f"({get_column_letter(8 + 2 * i)}{r}-{get_column_letter(7 + 2 * i)}{r})"
+                    parcalar = [f"({get_column_letter(10 + 2 * i)}{r}-{get_column_letter(9 + 2 * i)}{r})"
                                 for i in range(n)]
                     ws.cell(row=r, column=net_kol, value="=" + "+".join(parcalar))
                 ws.column_dimensions[get_column_letter(net_kol)].width = 12
-            for k, gen in zip("ABCDEF", (12, 7, 22, 22, 16, 16)):
+            for k, gen in zip("ABCDEFGH", (12, 7, 22, 22, 16, 16, 14, 14)):
                 ws.column_dimensions[k].width = gen
             for i in range(2 * n + 1):  # KGÜP sütunları + UEVM
-                ws.column_dimensions[get_column_letter(7 + i)].width = 16
+                ws.column_dimensions[get_column_letter(9 + i)].width = 16
             ws.freeze_panes = "A3"
     except PermissionError:
         log(f"UYARI: {yol.name} yazılamadı — dosya Excel'de açık, kapatıp yeniden deneyin.")
