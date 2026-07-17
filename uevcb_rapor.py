@@ -184,15 +184,18 @@ def guvenli_ad(ad):
 
 
 def rapor_uret(org_id, org_ad, bas, bit, klasor, log=print, uevcbler=None):
+    """Organizasyon için TEK Excel üretir: GÖP/İA (org toplamı) + her santralin
+    İlk/Son KGÜP'ü + UEVM toplamı + NET (Σ Son−İlk KGÜP, Excel formülü)."""
+    from openpyxl.utils import get_column_letter
+
     log(f"Organizasyon: {org_ad} (id {org_id})")
     if uevcbler is None:
         log("UEVÇB listesi taranıyor (ay ay)...")
         uevcbler = uevcb_listesi(org_id, bas, bit, log)
-    uevcb_var = bool(uevcbler)
-    if not uevcbler:
-        log("UEVÇB listesi boş — dosya organizasyon adıyla yazılacak.")
-        uevcbler = [(org_id, org_ad)]
-    log("UEVÇB'ler: " + ", ".join(ad for _, ad in uevcbler))
+    if uevcbler:
+        log("Santraller: " + ", ".join(ad for _, ad in uevcbler))
+    else:
+        log("UEVÇB listesi boş — yalnız organizasyon verileri yazılacak.")
 
     log("GÖP eşleşme çekiliyor...")
     gop = saatlik_cek("dam-clearing", org_id, bas, bit,
@@ -210,45 +213,72 @@ def rapor_uret(org_id, org_ad, bas, bit, klasor, log=print, uevcbler=None):
     for ad, seri in list(gop.items()) + [("İA Alış (MWh)", ia_alis), ("İA Satış (MWh)", ia_satis)]:
         tablo[ad] = seri.reindex(idx)
 
+    # her santralin İlk/Son KGÜP'ü ayrı sütun (UEVÇB bazlı yayınlanır)
+    n = len(uevcbler)
+    for uid, ad in uevcbler:
+        log(f"{ad} → KGÜP çekiliyor...")
+        ilk = saatlik_cek("kgup-v1", org_id, bas, bit, "toplam", log, region="TR1", uevcb_id=uid)
+        son = saatlik_cek("kgup", org_id, bas, bit, "toplam", log, region="TR1", uevcb_id=uid)
+        tablo[f"{ad} İlk KGÜP"] = ilk.reindex(idx)
+        tablo[f"{ad} Son KGÜP"] = son.reindex(idx)
+
+    # UEVM toplamı — UEVM santral (pp) bazlı yayınlanır; adlar UEVÇB adıyla eşleşir
+    uevm_serileri = []
+    if uevcbler:
+        log("UEVM santral listesi çekiliyor...")
+        e = baglan()
+        pl = df_yap(e.call("uevm-pp-list"))
+
+        def norm(s):
+            return re.sub(r"\s+", " ", str(s)).strip().upper()
+        pp_ad = {norm(str(nm).rsplit("-", 1)[0]): pid for pid, nm in zip(pl["id"], pl["name"])}
+        for _, ad in uevcbler:
+            pid = pp_ad.get(norm(ad))
+            if pid is None:
+                log(f"  uyarı: '{ad}' UEVM santral listesinde yok — UEVM toplamına katılamadı.")
+                continue
+            log(f"{ad} → UEVM çekiliyor (pp {pid})...")
+            s = saatlik_cek("uevm", org_id, bas, bit, "total", log, pp_id=pid)
+            uevm_serileri.append(s.reindex(idx))
+    if uevm_serileri:
+        tablo["UEVM Toplam (MWh)"] = pd.concat(uevm_serileri, axis=1).sum(axis=1, min_count=1)
+    else:
+        tablo["UEVM Toplam (MWh)"] = float("nan")
+
+    son_dolu = tablo.iloc[:, 2:].notna().any(axis=1)  # yayınlanmamış kuyruk saatleri at
+    if son_dolu.any():
+        tablo = tablo.loc[:son_dolu[son_dolu].index[-1]]
+
     klasor = Path(klasor)
     klasor.mkdir(parents=True, exist_ok=True)
-    yollar = []
-    for uid, ad in uevcbler:
-        # KGÜP UEVÇB bazında yayınlanır — her dosyaya kendi KGÜP'ü yazılır
-        log(f"{ad} → KGÜP çekiliyor...")
-        kg_ek = dict(region="TR1")
-        if uevcb_var:
-            kg_ek["uevcb_id"] = uid
-        ilk = saatlik_cek("kgup-v1", org_id, bas, bit, "toplam", log, **kg_ek)
-        son = saatlik_cek("kgup", org_id, bas, bit, "toplam", log, **kg_ek)
-        t = tablo.copy()
-        t["İlk KGÜP (MWh)"] = ilk.reindex(idx)
-        t["Son KGÜP (MWh)"] = son.reindex(idx)
-        son_dolu = t.iloc[:, 2:].notna().any(axis=1)  # yayınlanmamış kuyruk saatleri at
-        if son_dolu.any():
-            t = t.loc[:son_dolu[son_dolu].index[-1]]
-
-        yol = klasor / f"{guvenli_ad(ad)}.xlsx"
-        try:
-            with pd.ExcelWriter(yol, engine="openpyxl") as w:
-                t.to_excel(w, index=False, sheet_name="Veri", startrow=1)
-                ws = w.sheets["Veri"]
-                ws["A1"] = (f"{ad} — GÖP/İA kolonları {org_ad} organizasyon toplamıdır "
-                            "(EPİAŞ UEVÇB kırılımı yayınlamaz); KGÜP kolonları bu UEVÇB'ye aittir.")
-                # NET sütunu: GÖP Alış + İA Alış − GÖP Satış − İA Satış + Son KGÜP (Excel formülü)
-                ws.cell(row=2, column=9, value="NET (MWh)")
-                for r in range(3, len(t) + 3):
-                    ws.cell(row=r, column=9, value=f"=C{r}+E{r}-D{r}-F{r}+H{r}")
-                for kol, gen in zip("ABCDEFGHI", (12, 7, 22, 22, 16, 16, 16, 16, 14)):
-                    ws.column_dimensions[kol].width = gen
-                ws.freeze_panes = "A3"
-        except PermissionError:
-            log(f"UYARI: {yol.name} yazılamadı — dosya Excel'de açık olabilir, kapatıp tekrar deneyin.")
-            continue
-        yollar.append(yol)
-        log(f"Yazıldı: {yol}")
-    log(f"TAMAM — {len(yollar)} dosya: {klasor}")
-    return yollar
+    yol = klasor / f"{guvenli_ad(org_ad)}.xlsx"
+    try:
+        with pd.ExcelWriter(yol, engine="openpyxl") as w:
+            tablo.to_excel(w, index=False, sheet_name="Veri", startrow=1)
+            ws = w.sheets["Veri"]
+            ws["A1"] = (f"{org_ad} — GÖP/İA org toplamı (EPİAŞ UEVÇB kırılımı yayınlamaz); "
+                        "KGÜP sütunları santral bazlı; UEVM ~1,5 ay geriden yayınlanır; "
+                        "NET = Σ(Son KGÜP − İlk KGÜP).")
+            # NET sütunu: santrallerin (Son − İlk KGÜP) toplamı, Excel formülü
+            if n:
+                net_kol = 8 + 2 * n  # A..F=6, KGÜP çiftleri G'den, +1 UEVM, +1 NET
+                ws.cell(row=2, column=net_kol, value="NET (MWh)")
+                for r in range(3, len(tablo) + 3):
+                    parcalar = [f"({get_column_letter(8 + 2 * i)}{r}-{get_column_letter(7 + 2 * i)}{r})"
+                                for i in range(n)]
+                    ws.cell(row=r, column=net_kol, value="=" + "+".join(parcalar))
+                ws.column_dimensions[get_column_letter(net_kol)].width = 12
+            for k, gen in zip("ABCDEF", (12, 7, 22, 22, 16, 16)):
+                ws.column_dimensions[k].width = gen
+            for i in range(2 * n + 1):  # KGÜP sütunları + UEVM
+                ws.column_dimensions[get_column_letter(7 + i)].width = 16
+            ws.freeze_panes = "A3"
+    except PermissionError:
+        log(f"UYARI: {yol.name} yazılamadı — dosya Excel'de açık, kapatıp yeniden deneyin.")
+        return []
+    log(f"Yazıldı: {yol}")
+    log("TAMAM.")
+    return [yol]
 
 
 # ----------------------------- arayüz -----------------------------
@@ -390,7 +420,7 @@ def arayuz():
             uevcbler.clear()
             uevcbler.extend(uevcb_listesi(oid, bas, bit, log))
             uevcb_orgu[0] = oid
-            log(f"{len(uevcbler)} UEVÇB bulundu — istersen sağdan seç (seçmezsen hepsi yazılır).")
+            log(f"{len(uevcbler)} UEVÇB bulundu — istersen sağdan seç (seçmezsen hepsi Excel'e girer).")
             kuyruk.put("__UEVCB_GOSTER__")
         calistir_arka(is_)
 
