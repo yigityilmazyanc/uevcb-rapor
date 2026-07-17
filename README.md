@@ -1,19 +1,22 @@
 # UEVÇB Raporu — EPİAŞ Veri Arayüzü
 
-EPİAŞ Şeffaflık Platformu'ndan organizasyon/UEVÇB seçerek saatlik veri çeker ve
-her UEVÇB adıyla birer Excel dosyası üretir:
+EPİAŞ Şeffaflık Platformu'ndan organizasyon seçerek saatlik veri çeker ve
+organizasyon adıyla TEK Excel dosyası üretir:
 
 | Sütun | İçerik | EPİAŞ kaynağı |
 |---|---|---|
 | A, B | Tarih, Saat | — |
 | C, D | GÖP Eşleşme Alış / Satış (MWh) | `dam-clearing` (org bazlı) |
 | E, F | İA Alış / Satış (MWh) | `bi-long` / `bi-short` (org bazlı) |
-| G, H | İlk KGÜP / Son KGÜP (MWh) | `dpp-first-version` / `dpp` (**UEVÇB bazlı**) |
-| I | NET = C+E−D−F+H | Excel formülü |
+| G, H | GİP Alış / Satış (MWh) | `idm-qty` (org bazlı, yalnız saatlik kontratlar) |
+| I… | Her santralin İlk KGÜP / Son KGÜP çifti (MWh) | `kgup-v1` / `kgup` (**UEVÇB bazlı**) |
+| … | UEVM Toplam (MWh) | `uevm` (santral bazlı; ~1,5 ay geriden yayınlanır) |
+| son | NET = Σ(Son KGÜP − İlk KGÜP) | Excel formülü |
 
-Not: EPİAŞ, GÖP eşleşme ve İA verilerini yalnız **organizasyon** bazında yayınlar —
-dosyalar UEVÇB adıyla adlandırılır ama C–F kolonları organizasyon toplamıdır
-(dosyanın 1. satırında da yazar). KGÜP kolonları gerçekten UEVÇB'ye aittir.
+Not: EPİAŞ, GÖP eşleşme / İA / GİP verilerini yalnız **organizasyon** bazında
+yayınlar; UEVÇB kırılımı yoktur (dosyanın 1. satırında da yazar). KGÜP ve UEVM
+kolonları gerçekten santral bazlıdır. GİP'te blok kontratlar saate bölünemediği
+için yalnız saatlik kontratlar sayılır.
 
 Organizasyon listesi KGÜP (İlk Versiyon) bölümünden gelir ve seçilen tarih
 aralığının **tamamı** taranır: ay içinde eklenen/çıkan/toplayıcı değiştiren
